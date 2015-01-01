@@ -51,8 +51,9 @@ class ConjGradSuite extends FunSuite with LocalSparkContext
 	test("CG with supplied vars")
 	{
 		// make a square SPD matrix and random vector x_real
-		val B: BlockMat = BlockMat.eye(sc,msize,bsize)*10 + BlockMat.rand(sc,msize,bsize);
-		val A: BlockMat = B.multiply(B.transpose);
+		/*val B: BlockMat = BlockMat.eye(sc,msize,bsize)*10 + BlockMat.rand(sc,msize,bsize);*/
+		/*val B: BlockMat = BlockMat.rand(sc,msize,bsize)*10;*/
+		val A: BlockMat = BlockMat.randSPD(sc,msize,bsize);
 		val x_real: BlockVec = BlockVec.rand(sc,vsize,vec_bsize);
 		val x0: BlockVec = BlockVec.zeros(sc,vsize,vec_bsize);
 
