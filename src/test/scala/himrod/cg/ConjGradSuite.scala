@@ -16,11 +16,11 @@ class ConjGradSuite extends FunSuite with LocalSparkContext
 	Logger.getLogger("akka").setLevel(Level.WARN);
 
 	// files to read
-	val N: Long = 16;
+	val N: Long = 160;
 	val msize = BlockSize(N,N);
-	val bsize = BlockSize(4,4);
+	val bsize = BlockSize(N/10,N/10);
 	val vsize = N;
-	val vec_bsize = 4;
+	val vec_bsize = N/10;
 
 	val vec_fin: String = "src/test/scala/himrod/cg/vec_data"
 	val mat_fin: String = "src/test/scala/himrod/cg/mat_data"

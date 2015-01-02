@@ -14,6 +14,13 @@ class ConjGradException(msg: String) extends Exception
 
 object ConjGrad extends Logging
 {
+	private def logStdout(msg: String) = 
+	{
+		val time: Long = System.currentTimeMillis/1000;
+		logInfo(msg);
+		println(time + ": " + msg);
+	}
+
 	// main method for spark_submit
 	//
 	// ./spark_submit this.jar -t tol -k max_it -A "mat_file" -b "vec_file"
@@ -25,40 +32,44 @@ object ConjGrad extends Logging
 		list match 
 		{
 			case Nil => map
+			case ("--obj" | "-o") :: tail => {
+				logStdout("ObjectFile flag set to true");
+				next_arg(map ++ Map('loadObjFile -> "true"), tail);
+			}
 			case ("--tol" | "-t") :: value :: tail =>{
-				logInfo("Running with tol = " + value);
+				logStdout("Running with tol = " + value.toDouble);
 				next_arg(map ++ Map('tol -> value), tail);
 			}
 			case ("--maxit" | "-k") :: value :: tail => {
-				logInfo("Running with " + value + " iterations");
+				logStdout("Running with " + value + " iterations");
 				next_arg(map ++ Map('k -> value), tail);
 			}
 			case ("--mat" | "-A") :: value :: tail => {
-				logInfo("Using matrix A from file: " + value);
+				logStdout("Using matrix A from file: " + value);
 				next_arg(map ++ Map('A -> value), tail);
 			}
 			case ("--sol" | "-b") :: value :: tail => {
-				logInfo("Using vector b from file: " + value);
+				logStdout("Using vector b from file: " + value);
 				next_arg(map ++ Map('b -> value), tail);
 			}
 			case ("--x0" | "-x") :: value :: tail => {
-				logInfo("Using initial x0 from file: " + value);
+				logStdout("Using initial x0 from file: " + value);
 				next_arg(map ++ Map('x -> value), tail);
 			}
 			case ("--delim" | "-d") :: value :: tail => {
-				logInfo("Using delim: " + value);
+				logStdout("Using delim: " + value);
 				next_arg(map ++ Map('delim -> value), tail);
 			}
 			case ("--size" | "-ms") :: value :: tail => {
-				logInfo("Using MatSize: " + value);
+				logStdout("Using MatSize: " + value);
 				next_arg(map ++ Map('msize -> value), tail);
 			}
 			case ("--bsize" | "-bs") :: value :: tail => {
-				logInfo("Using BlockSize: " + value);
+				logStdout("Using BlockSize: " + value);
 				next_arg(map ++ Map('bsize -> value), tail);
 			}
 			case other :: tail => {
-				logInfo("Read non-flag value: " + other);
+				logStdout("Read non-flag value: " + other);
 				next_arg(map, tail);
 			}
 		}
@@ -128,7 +139,7 @@ object ConjGrad extends Logging
 		}
 		val tol: Double = {
 			if (vars.contains('tol))
-				vars('k).toDouble;
+				vars('tol).toDouble;
 			else
 				1.0E-3;
 		}
@@ -137,34 +148,31 @@ object ConjGrad extends Logging
 		{
 			if (fin_vec.isEmpty || fin_mat.isEmpty)
 			{ 
-				logInfo("Generating random SPD matrix");
+				logStdout("Generating random SPD matrix");
 				val A: BlockMat = BlockMat.randSPD(sc,matSize,bsize);
-				/*val A: BlockMat = BlockMat.rand(sc,matSize,bsize);*/
-				logInfo("Materializing A; A has "+ A.blocks.count + "elements");
-				/*A.saveAsTextFile("A");*/
-				/*logInfo("Done writing A");*/
+				logStdout("Materializing A; A has "+ A.blocks.count + " elements");
 
-				logInfo("Generating random b vector");
+				logStdout("Generating random b vector");
 				val b: BlockVec = BlockVec.rand(sc,matSize.ncols,bsize.ncols);
-				logInfo("Materializing b; b has "+ b.blocks.count + "elements");
-				/*logInfo("Writing b to file: b");*/
-				/*b.saveAsTextFile("b");*/
-				/*logInfo("Done writing b");*/
+				logStdout("Materializing b; b has "+ b.blocks.count + " elements");
 
 				val x0: BlockVec = 
 				{
 					if (fin_x0.isEmpty)
 					{
-						logInfo("Generating all-zero x0");
+						logStdout("Generating all-zero x0");
 						BlockVec.zeros(sc,matSize.ncols,bsize.ncols);
 					}
 					else
 					{
-						logInfo("Reading x0 from file: " + fin_x0);
-						BlockVec.fromTextFile(sc,fin_x0,delim,matSize.ncols,bsize.ncols);
+						logStdout("Reading x0 from file: " + fin_x0);
+						if (vars.contains('loadObjFile))
+							BlockVec.fromObjectFile(sc,fin_x0,matSize.ncols,bsize.ncols);
+						else
+							BlockVec.fromTextFile(sc,fin_x0,delim,matSize.ncols,bsize.ncols);
 					}
 				}
-				logInfo("Materializing x0; x0 has "+ x0.blocks.count + "elements");
+				logStdout("Materializing x0; x0 has "+ x0.blocks.count + " elements");
 
 				run(sc,
 					A,
@@ -175,21 +183,36 @@ object ConjGrad extends Logging
 			}
 			else
 			{
-				runFromFile(sc,
-					fin_mat,
-					fin_vec,
-					delim,
-					matSize,
-					bsize,
-					tol,
-					maxIters);
+				if (vars.contains('loadObjFile))
+					runFromObjectFile(sc,
+						fin_mat,
+						fin_vec,
+						matSize,
+						bsize,
+						tol,
+						maxIters);
+				else
+					runFromTextFile(sc,
+						fin_mat,
+						fin_vec,
+						delim,
+						matSize,
+						bsize,
+						tol,
+						maxIters);
 			}
 		}
-		logInfo("Saving solution to file:" + fout);
-		soln._1.saveAsTextFile(fout);
+
+		logStdout("Saving solution to file:" + fout);
+
+		if (vars.contains('loadObjFile))
+			soln._1.saveAsTextFile(fout);
+		else
+			soln._1.saveAsObjectFile(fout);
 	}
 
-	type ConjGradSoln = (BlockVec,Double,Int);
+	private type ConjGradSoln = (BlockVec,Double,Int);
+	private val blocking: Boolean = false;
 
 	// run the CG algorithm to solve A*x = b with initial guess x0
 	def run(sc: SparkContext, 
@@ -199,80 +222,102 @@ object ConjGrad extends Logging
 		tol: Double,
 		maxIters: Int): ConjGradSoln =
 	{
-		logInfo("Generating initial residual, r = b - A*x0");
+		logStdout("Generating initial residual, r = b - A*x0");
 		var resid: BlockVec = b - A.multiply(x0);
 
 		var k: Int = 0;
 
-		logInfo("Computing initial norm");
 		var norm_sqr: Double = BlockVec.normSquared(resid);
 		var norm: Double = math.sqrt(norm_sqr);
 
-		logInfo("Starting CG iteration");
-		logInfo("Iteration, Residual Norm");
-		logInfo(k + "," + norm);
+		logStdout(k + "," + norm);
 
 		// matrix-vector multiplication A*p
 		var p: BlockVec = resid;
-		logInfo("Computing A*p_k---start");
 		var Ap: BlockVec = A.multiply(p);
-		logInfo("Computing A*p_k---finish");
 
 		// update x,resid
-		logInfo("Computing alpha");
 		var alpha: Double = norm_sqr / (p.dot(Ap));
 		var x: BlockVec = x0;
-		logInfo("Computing x_new");
 		var x_new: BlockVec = x + p*alpha;
-		logInfo("Computing resid_new");
 		var resid_new: BlockVec = resid - (Ap)*alpha;
 
 		// update search direction
 		var norm_sqr_new: Double = BlockVec.normSquared(resid_new);
-		var norm_new: Double = math.sqrt(norm_sqr_new);
+		/*var norm_new: Double = math.sqrt(norm_sqr_new);*/
 
 		var beta: Double = norm_sqr_new / norm_sqr;
-		logInfo("Computing p_new");
 		var p_new: BlockVec = resid_new + p*beta;
 
 		k += 1;
-		logInfo(k + "," + norm);
-		while ((norm_new > tol) && (k < maxIters)) 
+		norm = math.sqrt(norm_sqr_new);
+		logStdout(k + "," + norm);
+		while ((norm > tol) && (k < maxIters)) 
 		{
+			//free the RDD blocks of old vectors
+			x.blocks.unpersist(blocking);
+			p.blocks.unpersist(blocking);
+			resid.blocks.unpersist(blocking);
+
+			//update old variables
 			x = x_new;
 			p = p_new;
 			resid = resid_new;
-			norm = norm_new;
 			norm_sqr = norm_sqr_new;
 
-			logInfo("matrix-vector multiplication A*p");
+			//free the RDD blocks of now unused vectors
+			/*x_new.blocks.unpersist(blocking);*/
+			/*p_new.blocks.unpersist(blocking);*/
+			/*resid_new.blocks.unpersist(blocking);*/
+
 			Ap = A.multiply(p);
 
 			// update x,resid
-			logInfo("Updating x,resid");
 			alpha = norm_sqr / (p.dot(Ap));
 			x_new = x + p*alpha;
 			resid_new = resid - (Ap)*alpha;
 
 			// update search direction
-			logInfo("Computing new norm");
 			norm_sqr_new = BlockVec.normSquared(resid_new);
-			norm_new = math.sqrt(norm_sqr_new);
 
-			logInfo("Computing p_k");
 			beta = norm_sqr_new / norm_sqr;
 			p_new = resid_new + p*beta;
 
 			k += 1;
-
-				/*norm = sys.residNorm();*/
-			logInfo(k + "," + norm);
+			norm = math.sqrt(norm_sqr_new);
+			logStdout(k + "," + norm);
 		}
-		(x_new,norm_new,k);
+		(x_new,norm,k);
 	}
 
 	// run the CG algorithm, but load A,b from textfile. Use x0 = 0 as initial guess
-	def runFromFile(sc: SparkContext, 
+	def runFromObjectFile(sc: SparkContext, 
+		fmat: String, 
+		fvec: String, 
+		matSize: BlockSize,
+		bsize: BlockSize,
+		tol: Double, 
+		maxIters: Int): ConjGradSoln =
+	{
+		val vsize: Long = matSize.nrows; //vector length
+		val vec_bsize: Long = bsize.ncols; //inner dimensions equal
+
+		logStdout("Loading A from file " + fmat);
+		val A: BlockMat = BlockMat.fromObjectFile(sc,fmat,matSize,bsize);
+		logStdout("Materializing A: A has " + A.blocks.count + " elements");
+
+		logStdout("Loading b from file " + fvec);
+		val b: BlockVec = BlockVec.fromObjectFile(sc,fvec,vsize,vec_bsize);
+		logStdout("Materializing b: b has " + b.blocks.count + " elements");
+
+		logStdout("Initializing all-zero x0");
+		val x0: BlockVec = BlockVec.zeros(sc,vsize,vec_bsize);
+		logStdout("Materializing x0: x0 has " + x0.blocks.count + " elements");
+
+		ConjGrad.run(sc,A,b,x0,tol,maxIters);
+	}
+
+	def runFromTextFile(sc: SparkContext, 
 		fmat: String, 
 		fvec: String, 
 		delim: String,
@@ -284,17 +329,17 @@ object ConjGrad extends Logging
 		val vsize: Long = matSize.nrows; //vector length
 		val vec_bsize: Long = bsize.ncols; //inner dimensions equal
 
-		logInfo("Loading A from file " + fmat);
+		logStdout("Loading A from file " + fmat);
 		val A: BlockMat = BlockMat.fromTextFile(sc,fmat,delim,matSize,bsize);
-		logInfo("Materializing A: A has" + A.blocks.count + " elements");
+		logStdout("Materializing A: A has" + A.blocks.count + " elements");
 
-		logInfo("Loading b from file " + fvec);
+		logStdout("Loading b from file " + fvec);
 		val b: BlockVec = BlockVec.fromTextFile(sc,fvec,delim,vsize,vec_bsize);
-		logInfo("Materializing b: b has" + b.blocks.count + " elements");
+		logStdout("Materializing b: b has" + b.blocks.count + " elements");
 
-		logInfo("Initializing all-zero x0");
+		logStdout("Initializing all-zero x0");
 		val x0: BlockVec = BlockVec.zeros(sc,vsize,vec_bsize);
-		logInfo("Materializing x0: x0 has" + x0.blocks.count + " elements");
+		logStdout("Materializing x0: x0 has" + x0.blocks.count + " elements");
 
 		ConjGrad.run(sc,A,b,x0,tol,maxIters);
 	}
@@ -310,15 +355,15 @@ object ConjGrad extends Logging
 /*		var k = 0;*/
 /*		var norm = sys.residNorm();*/
 /**/
-/*		logInfo("Starting CG iteration");*/
-/*		logInfo("Iteration, Residual Norm");*/
-/*		logInfo(k + "," + norm);*/
+/*		logStdout("Starting CG iteration");*/
+/*		logStdout("Iteration, Residual Norm");*/
+/*		logStdout(k + "," + norm);*/
 /**/
 /*		while ((norm > tol) && (k < maxIters)) {*/
 /*			k += 1;*/
 /*			sys = sys.iterate();*/
 /*			norm = sys.residNorm();*/
-/*			logInfo(k + "," + norm);*/
+/*			logStdout(k + "," + norm);*/
 /*		}*/
 /*		(sys.x,norm,k);*/
 /*	}*/
@@ -332,29 +377,29 @@ object ConjGrad extends Logging
 	/*	tol: Double,*/
 	/*	maxIters: Int): ConjGradSoln =*/
 	/*{*/
-	/*	logInfo("Generating initial residual, r = b - A*x0");*/
+	/*	logStdout("Generating initial residual, r = b - A*x0");*/
 	/*	val resid: BlockVec = b - A.multiply(x0);*/
 
-	/*	logInfo("Allocating ConjGradState");*/
+	/*	logStdout("Allocating ConjGradState");*/
 	/*	/*var sys: ConjGradState = ConjGradState(A,x0,resid,resid);*/*/
 
 	/*	/*val sys: ConjGradState = ConjGradState(A,x0,resid,resid);*/*/
 	/*	/*ConjGrad(sys).solve(tol,maxIters);*/*/
 
-	/*	logInfo("Computing initial norm");*/
+	/*	logStdout("Computing initial norm");*/
 	/*	var k = 0;*/
 	/*	var norm = sys.residNorm();*/
 
-	/*	logInfo("Starting CG iteration");*/
-	/*	logInfo("Iteration, Residual Norm");*/
-	/*	logInfo(k + "," + norm);*/
+	/*	logStdout("Starting CG iteration");*/
+	/*	logStdout("Iteration, Residual Norm");*/
+	/*	logStdout(k + "," + norm);*/
 
 	/*	while ((norm > tol) && (k < maxIters)) */
 	/*	{*/
 	/*		k += 1;*/
 	/*		sys = sys.iterate();*/
 	/*		norm = sys.residNorm();*/
-	/*		logInfo(k + "," + norm);*/
+	/*		logStdout(k + "," + norm);*/
 	/*	}*/
 	/*	(sys.x,norm,k);*/
 	/*}*/
