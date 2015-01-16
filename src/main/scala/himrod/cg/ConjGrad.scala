@@ -265,11 +265,6 @@ object ConjGrad extends Logging
 			resid = resid_new;
 			norm_sqr = norm_sqr_new;
 
-			//free the RDD blocks of now unused vectors
-			/*x_new.blocks.unpersist(blocking);*/
-			/*p_new.blocks.unpersist(blocking);*/
-			/*resid_new.blocks.unpersist(blocking);*/
-
 			Ap = A.multiply(p);
 
 			// update x,resid
@@ -344,62 +339,3 @@ object ConjGrad extends Logging
 		ConjGrad.run(sc,A,b,x0,tol,maxIters);
 	}
 }
-
-// will probably delete this... doesn't seem necessary.
-/*case class ConjGrad(var sys: ConjGradState) extends Serializable with Logging*/
-/*{*/
-/*	type ConjGradSoln = (BlockVec,Double,Int);*/
-/**/
-/*	def solve(tol: Double, maxIters: Int): ConjGradSoln =*/
-/*	{*/
-/*		var k = 0;*/
-/*		var norm = sys.residNorm();*/
-/**/
-/*		logStdout("Starting CG iteration");*/
-/*		logStdout("Iteration, Residual Norm");*/
-/*		logStdout(k + "," + norm);*/
-/**/
-/*		while ((norm > tol) && (k < maxIters)) {*/
-/*			k += 1;*/
-/*			sys = sys.iterate();*/
-/*			norm = sys.residNorm();*/
-/*			logStdout(k + "," + norm);*/
-/*		}*/
-/*		(sys.x,norm,k);*/
-/*	}*/
-/*}*/
-
-	// run the CG algorithm to solve A*x = b with initial guess x0
-	/*def run(sc: SparkContext, */
-	/*	A: BlockMat,*/
-	/*	b: BlockVec,*/
-	/*	x0: BlockVec,*/
-	/*	tol: Double,*/
-	/*	maxIters: Int): ConjGradSoln =*/
-	/*{*/
-	/*	logStdout("Generating initial residual, r = b - A*x0");*/
-	/*	val resid: BlockVec = b - A.multiply(x0);*/
-
-	/*	logStdout("Allocating ConjGradState");*/
-	/*	/*var sys: ConjGradState = ConjGradState(A,x0,resid,resid);*/*/
-
-	/*	/*val sys: ConjGradState = ConjGradState(A,x0,resid,resid);*/*/
-	/*	/*ConjGrad(sys).solve(tol,maxIters);*/*/
-
-	/*	logStdout("Computing initial norm");*/
-	/*	var k = 0;*/
-	/*	var norm = sys.residNorm();*/
-
-	/*	logStdout("Starting CG iteration");*/
-	/*	logStdout("Iteration, Residual Norm");*/
-	/*	logStdout(k + "," + norm);*/
-
-	/*	while ((norm > tol) && (k < maxIters)) */
-	/*	{*/
-	/*		k += 1;*/
-	/*		sys = sys.iterate();*/
-	/*		norm = sys.residNorm();*/
-	/*		logStdout(k + "," + norm);*/
-	/*	}*/
-	/*	(sys.x,norm,k);*/
-	/*}*/
