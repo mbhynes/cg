@@ -1,0 +1,6 @@
+*.swp
+target/*
+project/target/*
+project/assembly/*
+project/project/*
+misc/*
